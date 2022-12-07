@@ -47,12 +47,12 @@ class CouchObjectProvider {
     /**
      * @private
      */
-    #startSharedWorker() {
+    async #startSharedWorker() {
         let provider = this;
         let sharedWorker;
 
         // eslint-disable-next-line no-undef
-        const sharedWorkerURL = `${this.openmct.getAssetPath()}${__OPENMCT_ROOT_RELATIVE__}couchDBChangesFeed.js`;
+        const sharedWorkerURL = await this.openmct.getAsset(`${this.openmct.getAssetPath()}${__OPENMCT_ROOT_RELATIVE__}couchDBChangesFeed.js`);
 
         sharedWorker = new SharedWorker(sharedWorkerURL, 'CouchDB SSE Shared Worker');
         sharedWorker.port.onmessage = provider.onSharedWorkerMessage.bind(this);
@@ -512,9 +512,9 @@ class CouchObjectProvider {
     /**
      * @private
      */
-    #initiateSharedWorkerFetchChanges(url) {
+    async #initiateSharedWorkerFetchChanges(url) {
         if (!this.changesFeedSharedWorker) {
-            this.changesFeedSharedWorker = this.#startSharedWorker();
+            this.changesFeedSharedWorker = await this.#startSharedWorker();
 
             if (this.isObservingObjectChanges()) {
                 this.stopObservingObjectChanges();

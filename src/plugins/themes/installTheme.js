@@ -1,6 +1,6 @@
 const dataAttribute = 'theme';
 
-export function installTheme(openmct, themeName) {
+export async function installTheme(openmct, themeName) {
     const currentTheme = document.querySelector(`link[data-${dataAttribute}]`);
     if (currentTheme) {
         currentTheme.remove();
@@ -10,7 +10,7 @@ export function installTheme(openmct, themeName) {
     newTheme.setAttribute('rel', 'stylesheet');
 
     // eslint-disable-next-line no-undef
-    const href = `${openmct.getAssetPath()}${__OPENMCT_ROOT_RELATIVE__}${themeName}Theme.css`;
+    const href = await openmct.getAsset(`${openmct.getAssetPath()}${__OPENMCT_ROOT_RELATIVE__}${themeName}Theme.css`);
     newTheme.setAttribute('href', href);
     newTheme.dataset[dataAttribute] = themeName;
 

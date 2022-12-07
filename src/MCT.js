@@ -320,6 +320,15 @@ define([
     };
 
     /**
+     * Pre-process asset URI.
+     * @memberof module:openmct.MCT#
+     * @method getAsset
+     */
+    MCT.prototype.getAsset = function (path) {
+        return path;
+    };
+
+    /**
      * Start running Open MCT. This should be called only after any plugins
      * have been installed.
      * @fires module:openmct.MCT~start

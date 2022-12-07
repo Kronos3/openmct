@@ -47,3 +47,4 @@ codecov
 
 # :(
 package-lock.json
+yarn.lock

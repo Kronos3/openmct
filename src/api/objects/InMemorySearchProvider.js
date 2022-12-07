@@ -86,7 +86,7 @@ class InMemorySearchProvider {
         });
     }
 
-    startIndexing() {
+    async startIndexing() {
         const rootObject = this.openmct.objects.rootProvider.rootObject;
 
         this.searchTypes = this.openmct.objects.SEARCH_TYPES;
@@ -98,7 +98,7 @@ class InMemorySearchProvider {
         this.indexAnnotations();
 
         if (typeof SharedWorker !== 'undefined') {
-            this.worker = this.startSharedWorker();
+            this.worker = await this.startSharedWorker();
         } else {
             // we must be on iOS
         }
@@ -213,9 +213,9 @@ class InMemorySearchProvider {
     /**
      * @private
      */
-    startSharedWorker() {
+    async startSharedWorker() {
         // eslint-disable-next-line no-undef
-        const sharedWorkerURL = `${this.openmct.getAssetPath()}${__OPENMCT_ROOT_RELATIVE__}inMemorySearchWorker.js`;
+        const sharedWorkerURL = await this.openmct.getAsset(`${this.openmct.getAssetPath()}${__OPENMCT_ROOT_RELATIVE__}inMemorySearchWorker.js`);
 
         const sharedWorker = new SharedWorker(sharedWorkerURL, 'InMemorySearch Shared Worker');
         sharedWorker.onerror = this.onWorkerError;

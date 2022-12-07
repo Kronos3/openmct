@@ -27,10 +27,14 @@ define([
 ) {
     function WorkerInterface(openmct) {
         // eslint-disable-next-line no-undef
-        const workerUrl = `${openmct.getAssetPath()}${__OPENMCT_ROOT_RELATIVE__}generatorWorker.js`;
-        this.worker = new Worker(workerUrl);
-        this.worker.onmessage = this.onMessage.bind(this);
-        this.callbacks = {};
+        let this_ = this;
+        this.worker = null;
+        this.callbacks = null;
+        openmct.getAsset(`${openmct.getAssetPath()}${__OPENMCT_ROOT_RELATIVE__}generatorWorker.js`).then((workerUrl) => {
+            this_.worker = new Worker(workerUrl);
+            this_.worker.onmessage = this_.onMessage.bind(this);
+            this_.callbacks = {};
+        });
     }
 
     WorkerInterface.prototype.onMessage = function (message) {
