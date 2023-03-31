@@ -21,42 +21,50 @@
  *****************************************************************************/
 
 <template>
-<table class="c-table c-lad-table">
-    <thead>
-        <tr>
-            <th>Name</th>
-            <th>Timestamp</th>
-            <th>Value</th>
-            <th v-if="hasUnits">Unit</th>
-        </tr>
-    </thead>
-    <tbody>
-        <template
-            v-for="ladTable in ladTableObjects"
-        >
-            <tr
-                :key="ladTable.key"
-                class="c-table__group-header js-lad-table-set__table-headers"
-            >
-                <td colspan="10">
-                    {{ ladTable.domainObject.name }}
-                </td>
+<div
+    class="c-lad-table-wrapper u-style-receiver js-style-receiver"
+    :class="staleClass"
+>
+    <table class="c-table c-lad-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Timestamp</th>
+                <th>Value</th>
+                <th v-if="hasUnits">Unit</th>
             </tr>
-            <lad-row
-                v-for="ladRow in ladTelemetryObjects[ladTable.key]"
-                :key="ladRow.key"
-                :domain-object="ladRow.domainObject"
-                :path-to-table="ladTable.objectPath"
-                :has-units="hasUnits"
-                @rowContextClick="updateViewContext"
-            />
-        </template>
-    </tbody>
-</table>
+        </thead>
+        <tbody>
+            <template
+                v-for="ladTable in ladTableObjects"
+            >
+                <tr
+                    :key="ladTable.key"
+                    class="c-table__group-header js-lad-table-set__table-headers"
+                >
+                    <td colspan="10">
+                        {{ ladTable.domainObject.name }}
+                    </td>
+                </tr>
+                <lad-row
+                    v-for="ladRow in ladTelemetryObjects[ladTable.key]"
+                    :key="combineKeys(ladTable.key, ladRow.key)"
+                    :domain-object="ladRow.domainObject"
+                    :path-to-table="ladTable.objectPath"
+                    :has-units="hasUnits"
+                    :is-stale="staleObjects.includes(combineKeys(ladTable.key, ladRow.key))"
+                    @rowContextClick="updateViewContext"
+                />
+            </template>
+        </tbody>
+    </table>
+</div>
 </template>
 
 <script>
+
 import LadRow from './LADRow.vue';
+import StalenessUtils from '@/utils/staleness';
 
 export default {
     components: {
@@ -74,7 +82,8 @@ export default {
             ladTableObjects: [],
             ladTelemetryObjects: {},
             compositions: [],
-            viewContext: {}
+            viewContext: {},
+            staleObjects: []
         };
     },
     computed: {
@@ -95,6 +104,13 @@ export default {
             }
 
             return false;
+        },
+        staleClass() {
+            if (this.staleObjects.length !== 0) {
+                return 'is-stale';
+            }
+
+            return '';
         }
     },
     mounted() {
@@ -103,6 +119,8 @@ export default {
         this.composition.on('remove', this.removeLadTable);
         this.composition.on('reorder', this.reorderLadTables);
         this.composition.load();
+
+        this.stalenessSubscription = {};
     },
     destroyed() {
         this.composition.off('add', this.addLadTable);
@@ -111,6 +129,11 @@ export default {
         this.compositions.forEach(c => {
             c.composition.off('add', c.addCallback);
             c.composition.off('remove', c.removeCallback);
+        });
+
+        Object.values(this.stalenessSubscription).forEach(stalenessSubscription => {
+            stalenessSubscription.unsubscribe();
+            stalenessSubscription.stalenessUtils.destroy();
         });
     },
     methods: {
@@ -137,9 +160,17 @@ export default {
                 removeCallback
             });
         },
+        combineKeys(ladKey, telemetryObjectKey) {
+            return `${ladKey}-${telemetryObjectKey}`;
+        },
         removeLadTable(identifier) {
             let index = this.ladTableObjects.findIndex(ladTable => this.openmct.objects.makeKeyString(identifier) === ladTable.key);
             let ladTable = this.ladTableObjects[index];
+
+            this.ladTelemetryObjects[ladTable.key].forEach(telemetryObject => {
+                let combinedKey = this.combineKeys(ladTable.key, telemetryObject.key);
+                this.unwatchStaleness(combinedKey);
+            });
 
             this.$delete(this.ladTelemetryObjects, ladTable.key);
             this.ladTableObjects.splice(index, 1);
@@ -155,22 +186,60 @@ export default {
                 let telemetryObject = {};
                 telemetryObject.key = this.openmct.objects.makeKeyString(domainObject.identifier);
                 telemetryObject.domainObject = domainObject;
+                const combinedKey = this.combineKeys(ladTable.key, telemetryObject.key);
 
-                let telemetryObjects = this.ladTelemetryObjects[ladTable.key];
+                const telemetryObjects = this.ladTelemetryObjects[ladTable.key];
                 telemetryObjects.push(telemetryObject);
 
                 this.$set(this.ladTelemetryObjects, ladTable.key, telemetryObjects);
+
+                this.stalenessSubscription[combinedKey] = {};
+                this.stalenessSubscription[combinedKey].stalenessUtils = new StalenessUtils(this.openmct, domainObject);
+
+                this.openmct.telemetry.isStale(domainObject).then((stalenessResponse) => {
+                    if (stalenessResponse !== undefined) {
+                        this.handleStaleness(combinedKey, stalenessResponse);
+                    }
+                });
+                const stalenessSubscription = this.openmct.telemetry.subscribeToStaleness(domainObject, (stalenessResponse) => {
+                    this.handleStaleness(combinedKey, stalenessResponse);
+                });
+
+                this.stalenessSubscription[combinedKey].unsubscribe = stalenessSubscription;
             };
         },
         removeTelemetryObject(ladTable) {
             return (identifier) => {
-                let telemetryObjects = this.ladTelemetryObjects[ladTable.key];
-                let index = telemetryObjects.findIndex(telemetryObject => this.openmct.objects.makeKeyString(identifier) === telemetryObject.key);
+                const keystring = this.openmct.objects.makeKeyString(identifier);
+                const telemetryObjects = this.ladTelemetryObjects[ladTable.key];
+                const combinedKey = this.combineKeys(ladTable.key, keystring);
+                let index = telemetryObjects.findIndex(telemetryObject => keystring === telemetryObject.key);
+
+                this.unwatchStaleness(combinedKey);
 
                 telemetryObjects.splice(index, 1);
-
                 this.$set(this.ladTelemetryObjects, ladTable.key, telemetryObjects);
             };
+        },
+        unwatchStaleness(combinedKey) {
+            const SKIP_CHECK = true;
+
+            this.stalenessSubscription[combinedKey].unsubscribe();
+            this.stalenessSubscription[combinedKey].stalenessUtils.destroy();
+            this.handleStaleness(combinedKey, { isStale: false }, SKIP_CHECK);
+
+            delete this.stalenessSubscription[combinedKey];
+        },
+        handleStaleness(combinedKey, stalenessResponse, skipCheck = false) {
+            if (skipCheck || this.stalenessSubscription[combinedKey].stalenessUtils.shouldUpdateStaleness(stalenessResponse)) {
+                const index = this.staleObjects.indexOf(combinedKey);
+                const foundStaleObject = index > -1;
+                if (stalenessResponse.isStale && !foundStaleObject) {
+                    this.staleObjects.push(combinedKey);
+                } else if (!stalenessResponse.isStale && foundStaleObject) {
+                    this.staleObjects.splice(index, 1);
+                }
+            }
         },
         updateViewContext(rowContext) {
             this.viewContext.row = rowContext;

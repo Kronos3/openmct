@@ -21,8 +21,8 @@
  *****************************************************************************/
 
 <template>
-<div class="c-tag__parent">
-    <div class="c-tag_selection">
+<div class="w-tag-wrapper has-tag-applier">
+    <template v-if="newTag">
         <AutoCompleteField
             v-if="newTag"
             ref="tagSelection"
@@ -31,22 +31,28 @@
             class="c-tag-selection"
             :item-css-class="'icon-circle'"
             @onChange="tagSelected"
+            @autoCompleteBlur="autoCompleteBlur"
         />
+    </template>
+    <template v-else>
         <div
-            v-else
             class="c-tag"
+            :class="{'c-tag-edit': !readOnly}"
             :style="{ background: selectedBackgroundColor, color: selectedForegroundColor }"
         >
+            <button
+                v-show="!readOnly"
+                class="c-completed-tag-deletion c-tag__remove-btn icon-x-in-circle"
+                :style="{ textShadow: selectedBackgroundColor + ' 0 0 4px' }"
+                :aria-label="`Remove tag ${selectedTagLabel}`"
+                @click="removeTag"
+            ></button>
             <div
                 class="c-tag__label"
                 aria-label="Tag"
             >{{ selectedTagLabel }} </div>
-            <button
-                class="c-completed-tag-deletion c-tag__remove-btn icon-x-in-circle"
-                @click="removeTag"
-            ></button>
         </div>
-    </div>
+    </template>
 </div>
 </template>
 
@@ -73,6 +79,12 @@ export default {
             }
         },
         newTag: {
+            type: Boolean,
+            default() {
+                return false;
+            }
+        },
+        readOnly: {
             type: Boolean,
             default() {
                 return false;
@@ -149,6 +161,9 @@ export default {
             if (tagAdded) {
                 this.$emit('tagAdded', tagAdded.id);
             }
+        },
+        autoCompleteBlur() {
+            this.$emit('tagBlurred');
         }
     }
 };

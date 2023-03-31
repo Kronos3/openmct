@@ -59,7 +59,7 @@ export default class CreateAction extends PropertiesAction {
             _.set(this.domainObject, key, value);
         });
 
-        const parentDomainObject = parentDomainObjectPath[0];
+        const parentDomainObject = this.openmct.objects.toMutable(parentDomainObjectPath[0]);
 
         this.domainObject.modified = Date.now();
         this.domainObject.location = this.openmct.objects.makeKeyString(parentDomainObject.identifier);
@@ -73,19 +73,22 @@ export default class CreateAction extends PropertiesAction {
             title: 'Saving'
         });
 
-        const success = await this.openmct.objects.save(this.domainObject);
-        if (success) {
+        try {
+            await this.openmct.objects.save(this.domainObject);
             const compositionCollection = await this.openmct.composition.get(parentDomainObject);
             compositionCollection.add(this.domainObject);
 
             this._navigateAndEdit(this.domainObject, parentDomainObjectPath);
 
             this.openmct.notifications.info('Save successful');
-        } else {
-            this.openmct.notifications.error('Error saving objects');
+        } catch (err) {
+            console.error(err);
+            this.openmct.notifications.error(`Error saving objects: ${err}`);
+        } finally {
+            this.openmct.objects.destroyMutable(parentDomainObject);
+            dialog.dismiss();
         }
 
-        dialog.dismiss();
     }
 
     /**
@@ -140,18 +143,21 @@ export default class CreateAction extends PropertiesAction {
             }
         };
 
-        this.domainObject = domainObject;
+        this.domainObject = this.openmct.objects.toMutable(domainObject);
 
         if (definition.initialize) {
-            definition.initialize(domainObject);
+            definition.initialize(this.domainObject);
         }
 
-        const createWizard = new CreateWizard(this.openmct, domainObject, this.parentDomainObject);
+        const createWizard = new CreateWizard(this.openmct, this.domainObject, this.parentDomainObject);
         const formStructure = createWizard.getFormStructure(true);
         formStructure.title = 'Create a New ' + definition.name;
 
         this.openmct.forms.showForm(formStructure)
             .then(this._onSave.bind(this))
-            .catch(this._onCancel.bind(this));
+            .catch(this._onCancel.bind(this))
+            .finally(() => {
+                this.openmct.objects.destroyMutable(this.domainObject);
+            });
     }
 }

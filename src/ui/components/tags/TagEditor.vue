@@ -25,11 +25,13 @@
     <TagSelection
         v-for="(addedTag, index) in addedTags"
         :key="index"
+        :class="{ 'w-tag-wrapper--tag-selector' : addedTag.newTag }"
         :selected-tag="addedTag.newTag ? null : addedTag"
         :new-tag="addedTag.newTag"
         :added-tags="addedTags"
         @tagRemoved="tagRemoved"
         @tagAdded="tagAdded"
+        @tagBlurred="tagBlurred"
     />
     <button
         v-show="!userAddingTag && !maxTagsAdded"
@@ -37,7 +39,7 @@
         title="Add new tag"
         @click="addTag"
     >
-        <div class="c-icon-button__label">Add Tag</div>
+        <div class="c-icon-button__label c-tag-btn__label">Add Tag</div>
     </button>
 </div>
 </template>
@@ -57,17 +59,28 @@ export default {
         },
         annotationType: {
             type: String,
-            required: true
-        },
-        targetSpecificDetails: {
-            type: Object,
-            required: true
+            required: false,
+            default: null
         },
         domainObject: {
             type: Object,
-            default() {
-                return null;
-            }
+            required: true,
+            default: null
+        },
+        targets: {
+            type: Object,
+            required: true,
+            default: null
+        },
+        targetDomainObjects: {
+            type: Object,
+            required: true,
+            default: null
+        },
+        onTagChange: {
+            type: Function,
+            required: false,
+            default: null
         }
     },
     data() {
@@ -99,7 +112,7 @@ export default {
     },
     methods: {
         annotationsChanged() {
-            if (this.annotations && this.annotations.length) {
+            if (this.annotations) {
                 this.tagsChanged();
             }
         },
@@ -141,27 +154,54 @@ export default {
             this.userAddingTag = true;
         },
         async tagRemoved(tagToRemove) {
-            // Soft delete annotations that match tag instead
+            // Soft delete annotations that match tag instead (that aren't already deleted)
             const annotationsToDelete = this.annotations.filter((annotation) => {
-                return annotation.tags.includes(tagToRemove);
+                return annotation.tags.includes(tagToRemove) && !annotation._deleted;
             });
             if (annotationsToDelete) {
                 await this.openmct.annotation.deleteAnnotations(annotationsToDelete);
                 this.$emit('tags-updated', annotationsToDelete);
+                if (this.onTagChange) {
+                    this.userAddingTag = false;
+                    this.onTagChange(this.annotations);
+                }
             }
+        },
+        tagBlurred() {
+            // Remove last tag when user clicks outside of TagSelection
+            this.addedTags.pop();
+            // Hide TagSelection and show "Add Tag" button
+            this.userAddingTag = false;
         },
         async tagAdded(newTag) {
             // Either undelete an annotation, or create one (1) new annotation
-            const existingAnnotation = this.annotations.find((annotation) => {
+            let existingAnnotation = this.annotations.find((annotation) => {
                 return annotation.tags.includes(newTag);
             });
 
-            const createdAnnotation = await this.openmct.annotation.addSingleAnnotationTag(existingAnnotation,
-                this.domainObject, this.targetSpecificDetails, this.annotationType, newTag);
+            if (!existingAnnotation) {
+                const contentText = `${this.annotationType} tag`;
+                const annotationCreationArguments = {
+                    name: contentText,
+                    existingAnnotation,
+                    contentText: contentText,
+                    targets: this.targets,
+                    targetDomainObjects: this.targetDomainObjects,
+                    domainObject: this.domainObject,
+                    annotationType: this.annotationType,
+                    tags: [newTag]
+                };
+                existingAnnotation = await this.openmct.annotation.create(annotationCreationArguments);
+            } else if (existingAnnotation._deleted) {
+                this.openmct.annotation.unDeleteAnnotation(existingAnnotation);
+            }
 
             this.userAddingTag = false;
 
-            this.$emit('tags-updated', createdAnnotation);
+            this.$emit('tags-updated', existingAnnotation);
+            if (this.onTagChange) {
+                this.onTagChange([existingAnnotation]);
+            }
         }
     }
 };

@@ -67,7 +67,8 @@
 
 <script>
 import ObjectPath from '../../components/ObjectPath.vue';
-import objectPathToUrl from '../../../tools/url';
+import PreviewAction from '../../preview/PreviewAction';
+import { identifierToString } from '../../../../src/tools/url';
 
 export default {
     name: 'AnnotationSearchResult',
@@ -125,16 +126,63 @@ export default {
             return this.result.fullTagModels[0].foregroundColor;
         }
     },
+    mounted() {
+        this.previewAction = new PreviewAction(this.openmct);
+        this.previewAction.on('isVisible', this.togglePreviewState);
+    },
+    destroyed() {
+        this.previewAction.off('isVisible', this.togglePreviewState);
+    },
     methods: {
-        clickedResult() {
+        clickedResult(event) {
             const objectPath = this.domainObject.originalPath;
-            let resultUrl = objectPathToUrl(this.openmct, objectPath);
-            // get rid of ROOT if extant
-            if (resultUrl.includes('/ROOT')) {
-                resultUrl = resultUrl.split('/ROOT').join('');
+            if (this.openmct.editor.isEditing()) {
+                event.preventDefault();
+                this.preview(objectPath);
+            } else {
+                const resultUrl = identifierToString(this.openmct, objectPath);
+
+                this.openmct.router.navigate(resultUrl);
             }
 
-            this.openmct.router.navigate(resultUrl);
+            if (this.result.annotationType === this.openmct.annotation.ANNOTATION_TYPES.PLOT_SPATIAL) {
+                //wait a beat for the navigation
+                setTimeout(() => {
+                    this.clickedPlotAnnotation();
+                }, 100);
+            }
+        },
+        preview(objectPath) {
+            if (this.previewAction.appliesTo(objectPath)) {
+                this.previewAction.invoke(objectPath);
+            }
+        },
+        clickedPlotAnnotation() {
+            const targetDetails = {};
+            const targetDomainObjects = {};
+            Object.entries(this.result.targets).forEach(([key, value]) => {
+                targetDetails[key] = value;
+            });
+            this.result.targetModels.forEach((targetModel) => {
+                const keyString = this.openmct.objects.makeKeyString(targetModel.identifier);
+                targetDomainObjects[keyString] = targetModel;
+            });
+            const selection =
+                    [
+                        {
+                            element: this.$el,
+                            context: {
+                                item: this.result.targetModels[0],
+                                type: 'plot-annotation-search-result',
+                                targetDetails,
+                                targetDomainObjects,
+                                annotations: [this.result],
+                                annotationType: this.openmct.annotation.ANNOTATION_TYPES.PLOT_SPATIAL,
+                                onAnnotationChange: () => {}
+                            }
+                        }
+                    ];
+            this.openmct.selection.select(selection, true);
         },
         isSearchMatched(tag) {
             if (this.result.matchingTagKeys) {

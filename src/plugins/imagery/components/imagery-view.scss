@@ -29,7 +29,7 @@
         flex-direction: column;
         flex: 1 1 auto;
 
-        &.unnsynced{
+        &.unsynced{
             @include sUnsynced();
         }
 
@@ -194,6 +194,9 @@
         overflow-y: hidden;
         margin-bottom: 1px;
         padding-bottom: $interiorMarginSm;
+        &.animate-scroll {
+            scroll-behavior: smooth; 
+        }
     }
 
     &__auto-scroll-resume-button {
@@ -243,7 +246,7 @@
     position: absolute;
     height: 100%;
     width: 100%;
-    opacity: 0.5;
+    opacity: 1;
     background-size: contain;
     background-repeat: no-repeat;
     background-position: center;

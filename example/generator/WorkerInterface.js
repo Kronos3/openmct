@@ -25,7 +25,7 @@ define([
 ], function (
     { v4: uuid }
 ) {
-    function WorkerInterface(openmct) {
+    function WorkerInterface(openmct, StalenessProvider) {
         // eslint-disable-next-line no-undef
         let this_ = this;
         this.worker = null;
@@ -34,8 +34,18 @@ define([
             this_.worker = new Worker(workerUrl);
             this_.worker.onmessage = this_.onMessage.bind(this);
             this_.callbacks = {};
+
+            this_.staleTelemetryIds = {};
+            this_.watchStaleness();
+
         });
     }
+
+    WorkerInterface.prototype.watchStaleness = function () {
+        this.StalenessProvider.on('stalenessEvent', ({ id, isStale}) => {
+            this.staleTelemetryIds[id] = isStale;
+        });
+    };
 
     WorkerInterface.prototype.onMessage = function (message) {
         message = message.data;
@@ -87,11 +97,12 @@ define([
     };
 
     WorkerInterface.prototype.subscribe = function (request, cb) {
-        function callback(message) {
-            cb(message.data);
-        }
-
-        var messageId = this.dispatch('subscribe', request, callback);
+        const id = request.id;
+        const messageId = this.dispatch('subscribe', request, (message) => {
+            if (!this.staleTelemetryIds[id]) {
+                cb(message.data);
+            }
+        });
 
         return function () {
             this.dispatch('unsubscribe', {

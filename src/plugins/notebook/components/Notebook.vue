@@ -50,7 +50,7 @@
         <Sidebar
             ref="sidebar"
             class="c-notebook__nav c-sidebar c-drawer c-drawer--align-left"
-            :class="[{'is-expanded': showNav}, {'c-drawer--push': !sidebarCoversEntries}, {'c-drawer--overlays': sidebarCoversEntries}]"
+            :class="sidebarClasses"
             :default-page-id="defaultPageId"
             :selected-page-id="getSelectedPageId()"
             :default-section-id="defaultSectionId"
@@ -123,6 +123,7 @@
             </div>
             <div
                 v-if="selectedPage && !selectedPage.isLocked"
+                :class="{ 'disabled': activeTransaction }"
                 class="c-notebook__drag-area icon-plus"
                 @click="newEntry()"
                 @dragover="dragOver"
@@ -133,6 +134,11 @@
                     To start a new entry, click here or drag and drop any object
                 </span>
             </div>
+            <progress-bar
+                v-if="savingTransaction"
+                class="c-telemetry-table__progress-bar"
+                :model="{ progressPerc: undefined }"
+            />
             <div
                 v-if="selectedPage && selectedPage.isLocked"
                 class="c-notebook__page-locked"
@@ -156,10 +162,12 @@
                     :selected-section="selectedSection"
                     :read-only="false"
                     :is-locked="selectedPage.isLocked"
+                    :selected-entry-id="selectedEntryId"
                     @cancelEdit="cancelTransaction"
                     @editingEntry="startTransaction"
                     @deleteEntry="deleteEntry"
                     @updateEntry="updateEntry"
+                    @entry-selection="entrySelection(entry)"
                 />
             </div>
             <div
@@ -183,6 +191,7 @@ import NotebookEntry from './NotebookEntry.vue';
 import Search from '@/ui/components/search.vue';
 import SearchResults from './SearchResults.vue';
 import Sidebar from './Sidebar.vue';
+import ProgressBar from '../../../ui/components/ProgressBar.vue';
 import { clearDefaultNotebook, getDefaultNotebook, setDefaultNotebook, setDefaultNotebookSectionId, setDefaultNotebookPageId } from '../utils/notebook-storage';
 import { addNotebookEntry, createNewEmbed, getEntryPosById, getNotebookEntries, mutateObject } from '../utils/notebook-entries';
 import { saveNotebookImageDomainObject, updateNamespaceOfDomainObject } from '../utils/notebook-image';
@@ -200,7 +209,8 @@ export default {
         NotebookEntry,
         Search,
         SearchResults,
-        Sidebar
+        Sidebar,
+        ProgressBar
     },
     inject: ['agent', 'openmct', 'snapshotContainer'],
     props: {
@@ -225,7 +235,10 @@ export default {
             showNav: false,
             sidebarCoversEntries: false,
             filteredAndSortedEntries: [],
-            notebookAnnotations: {}
+            notebookAnnotations: {},
+            selectedEntryId: '',
+            activeTransaction: false,
+            savingTransaction: false
         };
     },
     computed: {
@@ -270,6 +283,20 @@ export default {
 
             return this.sections[0];
         },
+        sidebarClasses() {
+            let sidebarClasses = [];
+            if (this.showNav) {
+                sidebarClasses.push('is-expanded');
+            }
+
+            if (this.sidebarCoversEntries) {
+                sidebarClasses.push('c-drawer--overlays');
+            } else {
+                sidebarClasses.push('c-drawer--push');
+            }
+
+            return sidebarClasses;
+        },
         showLockButton() {
             const entries = getNotebookEntries(this.domainObject, this.selectedSection, this.selectedPage);
 
@@ -297,6 +324,9 @@ export default {
         this.formatSidebar();
         this.setSectionAndPageFromUrl();
 
+        this.openmct.selection.on('change', this.updateSelection);
+        this.transaction = null;
+
         window.addEventListener('orientationchange', this.formatSidebar);
         window.addEventListener('hashchange', this.setSectionAndPageFromUrl);
         this.filterAndSortEntries();
@@ -320,6 +350,7 @@ export default {
 
         window.removeEventListener('orientationchange', this.formatSidebar);
         window.removeEventListener('hashchange', this.setSectionAndPageFromUrl);
+        this.openmct.selection.off('change', this.updateSelection);
     },
     updated: function () {
         this.$nextTick(() => {
@@ -349,15 +380,20 @@ export default {
                 }
             });
         },
+        updateSelection(selection) {
+            if (selection?.[0]?.[0]?.context?.targetDetails?.entryId === undefined) {
+                this.selectedEntryId = '';
+            }
+        },
         async loadAnnotations() {
             if (!this.openmct.annotation.getAvailableTags().length) {
+                // don't bother loading annotations if there are no tags
                 return;
             }
 
             this.lastLocalAnnotationCreation = this.domainObject.annotationLastCreated ?? 0;
 
-            const query = this.openmct.objects.makeKeyString(this.domainObject.identifier);
-            const foundAnnotations = await this.openmct.annotation.getAnnotations(query);
+            const foundAnnotations = await this.openmct.annotation.getAnnotations(this.domainObject.identifier);
             foundAnnotations.forEach((foundAnnotation) => {
                 const targetId = Object.keys(foundAnnotation.targets)[0];
                 const entryId = foundAnnotation.targets[targetId].entryId;
@@ -749,6 +785,7 @@ export default {
             return section.id;
         },
         async newEntry(embed = null) {
+            this.startTransaction();
             this.resetSearch();
             const notebookStorage = this.createNotebookStorageObject();
             this.updateDefaultNotebook(notebookStorage);
@@ -891,20 +928,37 @@ export default {
         },
         startTransaction() {
             if (!this.openmct.objects.isTransactionActive()) {
+                this.activeTransaction = true;
                 this.transaction = this.openmct.objects.startTransaction();
             }
         },
         async saveTransaction() {
-            if (this.transaction !== undefined) {
-                await this.transaction.commit();
-                this.openmct.objects.endTransaction();
+            if (this.transaction !== null) {
+                this.savingTransaction = true;
+                try {
+                    await this.transaction.commit();
+                } finally {
+                    this.endTransaction();
+                }
             }
         },
         async cancelTransaction() {
-            if (this.transaction !== undefined) {
-                await this.transaction.cancel();
-                this.openmct.objects.endTransaction();
+            if (this.transaction !== null) {
+                try {
+                    await this.transaction.cancel();
+                } finally {
+                    this.endTransaction();
+                }
             }
+        },
+        entrySelection(entry) {
+            this.selectedEntryId = entry.id;
+        },
+        endTransaction() {
+            this.openmct.objects.endTransaction();
+            this.transaction = null;
+            this.savingTransaction = false;
+            this.activeTransaction = false;
         }
     }
 };
