@@ -32,7 +32,7 @@ function replaceDotsWithUnderscores(filename) {
 }
 
 import {saveAs} from 'saveAs';
-import html2canvas from 'html2canvas';
+import domtoimage from 'dom-to-image-more';
 import { v4 as uuid } from 'uuid';
 
 class ImageExporter {
@@ -46,95 +46,95 @@ class ImageExporter {
         * @param {object} options Image options.
         * @returns {promise}
         */
-    renderElement(element, { imageType, className, thumbnailSize }) {
-        const self = this;
-        const overlays = this.openmct.overlays;
-        const dialog = overlays.dialog({
-            iconClass: 'info',
-            message: 'Capturing image, please wait...',
-            buttons: [
-                {
-                    label: 'Cancel',
-                    emphasis: true,
-                    callback: function () {
-                        dialog.dismiss();
-                    }
-                }
-            ]
-        });
+    // renderElement(element, { imageType, className, thumbnailSize }) {
+    //     const self = this;
+    //     const overlays = this.openmct.overlays;
+    //     const dialog = overlays.dialog({
+    //         iconClass: 'info',
+    //         message: 'Capturing image, please wait...',
+    //         buttons: [
+    //             {
+    //                 label: 'Cancel',
+    //                 emphasis: true,
+    //                 callback: function () {
+    //                     dialog.dismiss();
+    //                 }
+    //             }
+    //         ]
+    //     });
 
-        let mimeType = 'image/png';
-        if (imageType === 'jpg') {
-            mimeType = 'image/jpeg';
-        }
+    //     let mimeType = 'image/png';
+    //     if (imageType === 'jpg') {
+    //         mimeType = 'image/jpeg';
+    //     }
 
-        let exportId = undefined;
-        let oldId = undefined;
-        if (className) {
-            const newUUID = uuid();
-            exportId = `$export-element-${newUUID}`;
-            oldId = element.id;
-            element.id = exportId;
-        }
+    //     let exportId = undefined;
+    //     let oldId = undefined;
+    //     if (className) {
+    //         const newUUID = uuid();
+    //         exportId = `$export-element-${newUUID}`;
+    //         oldId = element.id;
+    //         element.id = exportId;
+    //     }
 
-        return html2canvas(element, {
-            useCORS: true,
-            allowTaint: true,
-            logging: false,
-            onclone: function (document) {
-                if (className) {
-                    const clonedElement = document.getElementById(exportId);
-                    clonedElement.classList.add(className);
-                }
+    //     return html2canvas(element, {
+    //         useCORS: true,
+    //         allowTaint: true,
+    //         logging: false,
+    //         onclone: function (document) {
+    //             if (className) {
+    //                 const clonedElement = document.getElementById(exportId);
+    //                 clonedElement.classList.add(className);
+    //             }
 
-                element.id = oldId;
-            },
-            removeContainer: true // Set to false to debug what html2canvas renders
-        }).then(canvas => {
-            dialog.dismiss();
+    //             element.id = oldId;
+    //         },
+    //         removeContainer: true // Set to false to debug what html2canvas renders
+    //     }).then(canvas => {
+    //         dialog.dismiss();
 
-            return new Promise(function (resolve, reject) {
-                if (thumbnailSize) {
-                    const thumbnail = self.getThumbnail(canvas, mimeType, thumbnailSize);
+    //         return new Promise(function (resolve, reject) {
+    //             if (thumbnailSize) {
+    //                 const thumbnail = self.getThumbnail(canvas, mimeType, thumbnailSize);
 
-                    return canvas.toBlob(blob => resolve({
-                        blob,
-                        thumbnail
-                    }), mimeType);
-                }
+    //                 return canvas.toBlob(blob => resolve({
+    //                     blob,
+    //                     thumbnail
+    //                 }), mimeType);
+    //             }
 
-                return canvas.toBlob(blob => resolve({ blob }), mimeType);
-            });
-        }).catch(error => {
-            dialog.dismiss();
+    //             return canvas.toBlob(blob => resolve({ blob }), mimeType);
+    //         });
+    //     }).catch(error => {
+    //         dialog.dismiss();
 
-            console.error('error capturing image', error);
-            const errorDialog = overlays.dialog({
-                iconClass: 'error',
-                message: 'Image was not captured successfully!',
-                buttons: [
-                    {
-                        label: "OK",
-                        emphasis: true,
-                        callback: function () {
-                            errorDialog.dismiss();
-                        }
-                    }
-                ]
-            });
-        });
-    }
+    //         console.error('error capturing image', error);
+    //         const errorDialog = overlays.dialog({
+    //             iconClass: 'error',
+    //             message: 'Image was not captured successfully!',
+    //             buttons: [
+    //                 {
+    //                     label: "OK",
+    //                     emphasis: true,
+    //                     callback: function () {
+    //                         errorDialog.dismiss();
+    //                     }
+    //                 }
+    //             ]
+    //         });
+    //     });
+    // }
 
-    getThumbnail(canvas, mimeType, size) {
-        const thumbnailCanvas = document.createElement('canvas');
-        thumbnailCanvas.setAttribute('width', size.width);
-        thumbnailCanvas.setAttribute('height', size.height);
-        const ctx = thumbnailCanvas.getContext('2d');
-        ctx.globalCompositeOperation = "copy";
-        ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, size.width, size.height);
+    // getThumbnail(canvas, mimeType, size) {
+    //     const thumbnailCanvas = document.createElement('canvas');
+    //     thumbnailCanvas.setAttribute('width', size.width);
+    //     thumbnailCanvas.setAttribute('height', size.height);
+    //     const ctx = thumbnailCanvas.getContext('2d');
+    //     ctx.globalCompositeOperation = "copy";
+    //     ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, size.width, size.height);
 
-        return thumbnailCanvas.toDataURL(mimeType);
-    }
+    //     return thumbnailCanvas.toDataURL(mimeType);
+    // }
 
     /**
      * Takes a screenshot of a DOM node and exports to JPG.
@@ -146,11 +146,8 @@ class ImageExporter {
     async exportJPG(element, filename, className) {
         const processedFilename = replaceDotsWithUnderscores(filename);
 
-        const img = await this.renderElement(element, {
-            imageType: 'jpg',
-            className
-        });
-        saveAs(img.blob, processedFilename);
+        const imgUrl = await domtoimage.toJpeg(element, { quality: 0.95 });
+        saveAs(imgUrl, processedFilename);
     }
 
     /**
@@ -163,11 +160,8 @@ class ImageExporter {
     async exportPNG(element, filename, className) {
         const processedFilename = replaceDotsWithUnderscores(filename);
 
-        const img = await this.renderElement(element, {
-            imageType: 'png',
-            className
-        });
-        saveAs(img.blob, processedFilename);
+        const imgUrl = await domtoimage.toPng(element);
+        saveAs(imgUrl, processedFilename);
     }
 
     /**
